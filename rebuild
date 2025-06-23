@@ -470,18 +470,24 @@ query_kernel() {
 
 check_kernel() {
     [[ -n "${1}" ]] && check_path="${1}" || error_msg "Invalid kernel path to check."
-    check_files=($(cat "${check_path}/sha256sums" | awk '{print $2}'))
-    for cf in "${check_files[@]}"; do
-        {
-            # Check if file exists
-            [[ -s "${check_path}/${cf}" ]] || error_msg "The [ ${cf} ] file is missing."
-            # Check if the file sha256sum is correct
-            tmp_sha256sum="$(sha256sum "${check_path}/${cf}" | awk '{print $1}')"
-            tmp_checkcode="$(cat ${check_path}/sha256sums | grep ${cf} | awk '{print $1}')"
-            [[ "${tmp_sha256sum}" == "${tmp_checkcode}" ]] || error_msg "[ ${cf} ]: sha256sum verification failed."
-        }
-    done
-    echo -e "${INFO} All [ ${#check_files[@]} ] kernel files are sha256sum checked to be complete.\n"
+
+    verification_output=$( (cd "${check_path}" && sha256sum -c sha256sums) 2>&1 )
+    verification_status=$?
+    
+    if [[ ${verification_status} -ne 0 ]]; then
+        failed_files=$(echo "${verification_output}" | grep -E 'FAILED|No such file' | awk -F': ' '{print $1}')
+        for file in ${failed_files}; do
+            if [[ "${verification_output}" == *"No such file"* ]]; then
+                error_msg "The [ ${file} ] file is missing."
+            else
+                error_msg "[ ${file} ]: sha256sum verification failed."
+            fi
+        done
+        error_msg "[ sha256sum ]: One or more files failed verification."
+    fi
+    
+    file_count=$(grep -c '^[^#]' "${check_path}/sha256sums")
+    echo -e "${INFO} All [ ${file_count} ] kernel files are sha256sum checked to be complete.\n"
 }
 
 download_kernel() {
